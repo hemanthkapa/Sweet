@@ -13,44 +13,43 @@ def test_server_health():
     try:
         # Test basic server response
         response = requests.get("http://localhost:8000/", timeout=5)
-        print(f"✅ Server is running (status: {response.status_code})")
+        print(f" Server is running (status: {response.status_code})")
         return True
     except requests.exceptions.ConnectionError:
-        print("❌ Server is not running. Start it with: python src/server.py")
+        print(" Server is not running. Start it with: python src/server.py")
         return False
     except Exception as e:
-        print(f"❌ Server health check failed: {e}")
+        print(f" Server health check failed: {e}")
         return False
 
 def test_mcp_endpoint():
     """Test the MCP endpoint specifically"""
     try:
         response = requests.get("http://localhost:8000/mcp", timeout=5)
-        print(f"✅ MCP endpoint accessible (status: {response.status_code})")
+        print(f" MCP endpoint accessible (status: {response.status_code})")
         return True
     except Exception as e:
-        print(f"❌ MCP endpoint test failed: {e}")
+        print(f" MCP endpoint test failed: {e}")
         return False
 
 def test_tools_via_http():
     """Test if we can call tools via HTTP (basic test)"""
     try:
-        # This is a simplified test - in practice, MCP tools are called differently
-        # But we can at least verify the server responds
+        #checking if server responds
         response = requests.get("http://localhost:8000/mcp", timeout=5)
         if response.status_code == 200:
-            print("✅ Server responds to MCP requests")
+            print("Server responds to MCP requests")
             return True
         else:
-            print(f"⚠️  Server responded with status {response.status_code}")
+            print(f"Server responded with status {response.status_code}")
             return False
     except Exception as e:
-        print(f"❌ Tool testing failed: {e}")
+        print(f"Tool testing failed: {e}")
         return False
 
 def main():
     """Run all server tests"""
-    print("🧪 Testing ilovesugar MCP Server")
+    print("Testing ilovesugar MCP Server")
     print("=" * 40)
     
     # Test 1: Server health
@@ -71,7 +70,7 @@ def main():
     test_tools_via_http()
     
     print("\n" + "=" * 40)
-    print("🎉 Server tests completed!")
+    print(" Server tests completed!")
     print("\nNext steps:")
     print("1. Start ngrok: ngrok http 8000")
     print("2. Add the ngrok URL to Poke at poke.com/settings/connections")

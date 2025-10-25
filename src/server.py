@@ -13,7 +13,7 @@ def test_poke_connection() -> dict:
         "status": "connected",
         "server": "ilovesugar MCP Server",
         "timestamp": datetime.now().isoformat(),
-        "message": "Poke connection successful! 🎉"
+        "message": "Poke connection successful!"
     }
 
 @mcp.tool(description="Greet a user by name with a welcome message from the MCP server")
