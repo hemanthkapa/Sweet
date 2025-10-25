@@ -7,6 +7,14 @@ from pydexcom import Dexcom
 from pydexcom.errors import AccountErrorEnum
 from dotenv import load_dotenv
 import google.generativeai as genai
+from diabetes_context import (
+    track_meal_with_context,
+    log_glucose_response,
+    analyze_meal_patterns,
+    get_smart_recommendations,
+    learn_from_outcome,
+    get_diabetes_summary
+)
 
 # Load environment variables from .env file
 load_dotenv()
@@ -37,7 +45,7 @@ def get_server_info() -> dict:
         "version": "1.0.0",
         "environment": os.environ.get("ENVIRONMENT", "development"),
         "python_version": os.sys.version.split()[0],
-        "capabilities": ["poke_connection_test", "greeting", "server_info", "echo", "dexcom_glucose_data", "comprehensive_food_analysis"],
+        "capabilities": ["poke_connection_test", "greeting", "server_info", "echo", "dexcom_glucose_data", "comprehensive_food_analysis", "insulin_dose_calculation", "diabetes_context_management"],
         "status": "ready"
     }
 
@@ -297,6 +305,231 @@ def get_glucose_readings(minutes: int = 60) -> dict:
             "error": "Dexcom API error",
             "message": f"Failed to retrieve glucose data: {str(e)}"
         }
+
+@mcp.tool(description="Calculate insulin dose based on carb count, current glucose, and insulin ratios")
+def calculate_insulin_dose(
+    carb_grams: float,
+    insulin_to_carb_ratio: float = None,
+    total_daily_dose: float = None,
+    current_glucose: float = None,
+    target_glucose: float = 120.0,
+    correction_factor: float = None,
+    use_dexcom_glucose: bool = True
+) -> dict:
+    """
+    Calculate insulin dose based on carbohydrate intake and glucose levels.
+    
+    Args:
+        carb_grams: Grams of carbohydrates in the meal
+        insulin_to_carb_ratio: Units of insulin per gram of carbs (e.g., 10 means 1 unit per 10g carbs)
+        total_daily_dose: Total daily insulin dose (used to calculate ratios if not provided)
+        current_glucose: Current blood glucose in mg/dL (if not provided, will try to get from Dexcom)
+        target_glucose: Target blood glucose in mg/dL (default: 120)
+        correction_factor: mg/dL drop per unit of insulin (calculated from TDD if not provided)
+        use_dexcom_glucose: Whether to automatically get current glucose from Dexcom
+    """
+    try:
+        # Get current glucose from Dexcom if requested and not provided
+        if use_dexcom_glucose and current_glucose is None:
+            try:
+                username = os.getenv('DEXCOM_USERNAME')
+                password = os.getenv('DEXCOM_PASSWORD')
+                region = os.getenv('DEXCOM_REGION', 'us')
+                
+                if username and password:
+                    dexcom = Dexcom(username=username, password=password, region=region)
+                    glucose_reading = dexcom.get_current_glucose_reading()
+                    if glucose_reading:
+                        current_glucose = glucose_reading.mg_dl
+            except Exception as e:
+                return {
+                    "error": "Failed to get glucose from Dexcom",
+                    "message": f"Could not retrieve current glucose: {str(e)}",
+                    "suggestion": "Provide current_glucose parameter manually"
+                }
+        
+        # Validate required parameters
+        if carb_grams <= 0:
+            return {
+                "error": "Invalid carb count",
+                "message": "Carbohydrate grams must be greater than 0"
+            }
+        
+        if current_glucose is None:
+            return {
+                "error": "Current glucose required",
+                "message": "Please provide current_glucose or ensure Dexcom integration is working"
+            }
+        
+        # Calculate insulin-to-carb ratio if not provided
+        if insulin_to_carb_ratio is None:
+            if total_daily_dose is None or total_daily_dose <= 0:
+                return {
+                    "error": "Missing ratio information",
+                    "message": "Please provide either insulin_to_carb_ratio or total_daily_dose"
+                }
+            # Use 500 rule: 500 / TDD = I:C ratio
+            insulin_to_carb_ratio = 500 / total_daily_dose
+        
+        # Calculate correction factor if not provided
+        if correction_factor is None:
+            if total_daily_dose is None or total_daily_dose <= 0:
+                return {
+                    "error": "Missing correction factor",
+                    "message": "Please provide either correction_factor or total_daily_dose"
+                }
+            # Use 1800 rule: 1800 / TDD = correction factor
+            correction_factor = 1800 / total_daily_dose
+        
+        # Calculate mealtime insulin dose
+        mealtime_dose = carb_grams / insulin_to_carb_ratio
+        
+        # Calculate correction dose
+        glucose_difference = current_glucose - target_glucose
+        correction_dose = 0.0
+        
+        if glucose_difference > 0:
+            correction_dose = glucose_difference / correction_factor
+        elif glucose_difference < 0:
+            # If glucose is below target, we might want to reduce the mealtime dose
+            # This is a safety consideration - consult healthcare provider
+            correction_dose = glucose_difference / correction_factor
+        
+        # Calculate total insulin dose
+        total_dose = mealtime_dose + correction_dose
+        
+        # Safety checks and warnings
+        warnings = []
+        safety_notes = []
+        
+        # Check for very high doses
+        if total_dose > 20:
+            warnings.append("High insulin dose calculated - please verify with healthcare provider")
+        
+        # Check for negative correction (glucose below target)
+        if glucose_difference < -30:
+            warnings.append("Current glucose is significantly below target - consider reducing insulin or eating first")
+            safety_notes.append("Glucose below target may indicate need to eat before taking insulin")
+        
+        # Check for very high glucose
+        if current_glucose > 300:
+            warnings.append("Very high glucose reading - consider checking for ketones and consulting healthcare provider")
+        
+        # Check for very low glucose
+        if current_glucose < 70:
+            warnings.append("Low glucose reading - treat hypoglycemia before taking insulin")
+            safety_notes.append("Do not take insulin if experiencing hypoglycemia")
+        
+        # Round to appropriate precision
+        mealtime_dose_rounded = round(mealtime_dose, 1)
+        correction_dose_rounded = round(correction_dose, 1)
+        total_dose_rounded = round(total_dose, 1)
+        
+        return {
+            "calculation_summary": {
+                "carb_grams": carb_grams,
+                "current_glucose": current_glucose,
+                "target_glucose": target_glucose,
+                "glucose_difference": round(glucose_difference, 1)
+            },
+            "ratios_used": {
+                "insulin_to_carb_ratio": round(insulin_to_carb_ratio, 1),
+                "correction_factor": round(correction_factor, 1)
+            },
+            "dose_breakdown": {
+                "mealtime_dose": mealtime_dose_rounded,
+                "correction_dose": correction_dose_rounded,
+                "total_dose": total_dose_rounded
+            },
+            "recommendations": {
+                "total_insulin_units": total_dose_rounded,
+                "rounding_note": "Round to nearest 0.5 or 1 unit as advised by healthcare provider"
+            },
+            "safety_checks": {
+                "warnings": warnings,
+                "safety_notes": safety_notes,
+                "disclaimer": "This calculation is for educational purposes. Always consult your healthcare provider before making insulin dosing decisions."
+            },
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        return {
+            "error": "Insulin calculation failed",
+            "message": f"Failed to calculate insulin dose: {str(e)}"
+        }
+
+@mcp.tool(description="Track meal with context for Poke to remember patterns")
+def track_meal_context(
+    food_description: str,
+    carb_grams: float,
+    insulin_dose: float,
+    pre_meal_glucose: float,
+    notes: str = None
+) -> dict:
+    """Track a meal and store context for Poke to remember patterns"""
+    return track_meal_with_context(
+        food_description=food_description,
+        carb_grams=carb_grams,
+        insulin_dose=insulin_dose,
+        pre_meal_glucose=pre_meal_glucose,
+        notes=notes
+    )
+
+@mcp.tool(description="Log glucose response for Poke to track patterns")
+def log_glucose_response_context(
+    meal_description: str,
+    pre_meal_glucose: float,
+    post_meal_glucose: float,
+    time_elapsed_minutes: int,
+    insulin_dose_used: float
+) -> dict:
+    """Log glucose response for Poke to remember and analyze"""
+    return log_glucose_response(
+        meal_description=meal_description,
+        pre_meal_glucose=pre_meal_glucose,
+        post_meal_glucose=post_meal_glucose,
+        time_elapsed_minutes=time_elapsed_minutes,
+        insulin_dose_used=insulin_dose_used
+    )
+
+@mcp.tool(description="Ask Poke to analyze meal patterns from memory")
+def analyze_meal_patterns_context(
+    food_type: str = None,
+    time_period: str = "last_week"
+) -> dict:
+    """Generate context for Poke to analyze meal patterns"""
+    return analyze_meal_patterns(
+        food_type=food_type,
+        time_period=time_period
+    )
+
+@mcp.tool(description="Get personalized recommendations based on Poke's memory")
+def get_smart_recommendations_context(
+    current_situation: str
+) -> dict:
+    """Generate context for Poke to give personalized recommendations"""
+    return get_smart_recommendations(current_situation=current_situation)
+
+@mcp.tool(description="Learn from meal outcomes for better future predictions")
+def learn_from_outcome_context(
+    meal_description: str,
+    predicted_glucose_rise: float,
+    actual_glucose_rise: float,
+    insulin_ratio_used: float
+) -> dict:
+    """Help Poke learn from actual outcomes vs predictions"""
+    return learn_from_outcome(
+        meal_description=meal_description,
+        predicted_glucose_rise=predicted_glucose_rise,
+        actual_glucose_rise=actual_glucose_rise,
+        insulin_ratio_used=insulin_ratio_used
+    )
+
+@mcp.tool(description="Get diabetes management summary and available tools")
+def get_diabetes_management_summary() -> dict:
+    """Get a summary of diabetes management context for Poke"""
+    return get_diabetes_summary()
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
