@@ -5,12 +5,6 @@ Background glucose monitoring utility.
 Checks Dexcom glucose every `interval_minutes` and triggers an alert when
 value is outside the [low_threshold, high_threshold] range.
 
-Alerts are sent to an optional webhook URL provided via:
-- function parameter `webhook_url`, or
-- environment variable `POKE_WEBHOOK_URL` (fallback)
-
-If no webhook is configured, the alert is printed to stdout and appended to
-`alerts.log` in the project root.
 """
 
 from __future__ import annotations
@@ -22,8 +16,9 @@ import threading
 from datetime import datetime
 from typing import Optional, Dict, Any
 
-import requests
 from pydexcom import Dexcom
+import google.generativeai as genai
+import os
 
 # Internal singleton state
 _monitor_thread: Optional[threading.Thread] = None
@@ -41,17 +36,44 @@ _status: Dict[str, Any] = {
 }
 
 
-def _post_webhook(message: str, payload: Dict[str, Any], webhook_url: Optional[str]) -> None:
-    """Send alert to webhook if configured, else log/print."""
+def _get_ai_suggestion(glucose_value: float, alert_level: str, threshold: float) -> str:
+    """Get AI-powered suggestion based on glucose context using Gemini."""
     try:
-        if webhook_url:
-            headers = {"Content-Type": "application/json"}
-            requests.post(webhook_url, data=json.dumps({
-                "type": "glucose_alert",
-                "message": message,
-                **payload
-            }), headers=headers, timeout=10)
-        # Always also write a local log line for audit/debug
+        # Configure Gemini
+        genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
+        model = genai.GenerativeModel('gemini-2.0-flash-exp')
+        
+        # Create context-aware prompt
+        prompt = f"""
+        You are a diabetes management expert providing immediate, actionable advice for a glucose alert.
+        
+        Current Situation:
+        - Glucose Level: {glucose_value} mg/dL
+        - Alert Type: {alert_level.upper()}
+        - Threshold: {threshold} mg/dL
+        - Time: {datetime.now().strftime('%Y-%m-%d %H:%M')}
+        
+        Provide a concise, immediate action suggestion (1-2 sentences) that includes:
+        1. What to do RIGHT NOW
+        2. When to recheck glucose
+        3. Any warning signs to watch for
+        
+        Be specific, actionable, and urgent. Focus on immediate safety and next steps.
+        
+        Format: "IMMEDIATE ACTION: [specific action]. [When to recheck]. [Warning signs to watch]."
+        """
+        
+        response = model.generate_content(prompt)
+        return response.text.strip()
+        
+    except Exception as e:
+        # Simple fallback without hardcoded medical advice
+        return f"AI suggestion unavailable. Please consult your healthcare provider for guidance on glucose level {glucose_value} mg/dL."
+
+def _log_alert(message: str, payload: Dict[str, Any]) -> None:
+    """Log alert to file and console."""
+    try:
+        # Write to local log file for audit/debug
         line = f"{datetime.now().isoformat()} | {message} | {json.dumps(payload, ensure_ascii=False)}\n"
         try:
             with open(os.path.join(os.getcwd(), "alerts.log"), "a", encoding="utf-8") as f:
@@ -60,7 +82,7 @@ def _post_webhook(message: str, payload: Dict[str, Any], webhook_url: Optional[s
             pass
         print(f"[GlucoseMonitor] {line}", end="")
     except Exception as e:
-        print(f"[GlucoseMonitor] Failed to send webhook: {e}")
+        print(f"[GlucoseMonitor] Failed to log alert: {e}")
 
 
 def _get_current_glucose_value() -> Optional[float]:
@@ -83,14 +105,14 @@ def _get_current_glucose_value() -> Optional[float]:
         return None
 
 
-def _monitor_loop(low_threshold: float, high_threshold: float, interval_minutes: int, webhook_url: Optional[str]):
+def _monitor_loop(low_threshold: float, high_threshold: float, interval_minutes: int):
     interval_seconds = max(60, int(interval_minutes * 60))  # safety lower bound 60s
     _status.update({
         "running": True,
         "low_threshold": low_threshold,
         "high_threshold": high_threshold,
         "interval_minutes": interval_minutes,
-        "webhook_url": webhook_url,
+        "webhook_url": None,
         "last_error": None,
     })
 
@@ -102,25 +124,33 @@ def _monitor_loop(low_threshold: float, high_threshold: float, interval_minutes:
 
         if value is not None:
             if value < low_threshold:
-                msg = f"Danger: glucose LOW at {value} mg/dL (threshold {low_threshold})."
+                # Get AI-powered suggestion for low glucose
+                suggestion = _get_ai_suggestion(value, "low", low_threshold)
+                msg = f"🚨 GLUCOSE ALERT: LOW at {value} mg/dL (below {low_threshold})"
                 payload = {
                     "level": "low",
                     "value": value,
                     "threshold": low_threshold,
                     "timestamp": now,
+                    "suggestion": suggestion,
+                    "ai_generated": True
                 }
                 _status["last_alert"] = payload
-                _post_webhook(msg, payload, webhook_url)
+                _log_alert(msg, payload)
             elif value > high_threshold:
-                msg = f"Danger: glucose HIGH at {value} mg/dL (threshold {high_threshold})."
+                # Get AI-powered suggestion for high glucose
+                suggestion = _get_ai_suggestion(value, "high", high_threshold)
+                msg = f"🚨 GLUCOSE ALERT: HIGH at {value} mg/dL (above {high_threshold})"
                 payload = {
                     "level": "high",
                     "value": value,
                     "threshold": high_threshold,
                     "timestamp": now,
+                    "suggestion": suggestion,
+                    "ai_generated": True
                 }
                 _status["last_alert"] = payload
-                _post_webhook(msg, payload, webhook_url)
+                _log_alert(msg, payload)
 
         # Sleep until next check, but wake early if stopped
         for _ in range(interval_seconds):
@@ -135,7 +165,6 @@ def start_monitoring(
     low_threshold: float = 70,
     high_threshold: float = 250,
     interval_minutes: int = 10,
-    webhook_url: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Start the background glucose monitor. Returns current status."""
     global _monitor_thread, _stop_event
@@ -147,10 +176,9 @@ def start_monitoring(
         }
 
     _stop_event = threading.Event()
-    webhook = webhook_url or os.getenv("POKE_WEBHOOK_URL") or os.getenv("ALERT_WEBHOOK_URL")
     _monitor_thread = threading.Thread(
         target=_monitor_loop,
-        args=(low_threshold, high_threshold, interval_minutes, webhook),
+        args=(low_threshold, high_threshold, interval_minutes),
         daemon=True,
     )
     _monitor_thread.start()
@@ -159,7 +187,7 @@ def start_monitoring(
     return {
         "started": True,
         "status": _status,
-        "message": "Glucose monitor started"
+        "message": "Glucose monitor started with immediate suggestions"
     }
 
 

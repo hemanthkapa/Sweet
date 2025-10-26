@@ -15,7 +15,7 @@ from diabetes_context import (
     learn_from_outcome,
     get_diabetes_summary
 )
-from glucose_monitor import start_monitoring, stop_monitoring, status as monitor_status
+from glucose_monitor import start_monitoring, stop_monitoring, status as glucose_monitor_status
 
 # Load environment variables from .env file
 load_dotenv()
@@ -46,7 +46,7 @@ def get_server_info() -> dict:
         "version": "1.0.0",
         "environment": os.environ.get("ENVIRONMENT", "development"),
         "python_version": os.sys.version.split()[0],
-        "capabilities": ["poke_connection_test", "greeting", "server_info", "echo", "dexcom_glucose_data", "comprehensive_food_analysis", "insulin_dose_calculation", "diabetes_context_management"],
+        "capabilities": ["poke_connection_test", "greeting", "server_info", "echo", "dexcom_glucose_data", "comprehensive_food_analysis", "insulin_dose_calculation", "diabetes_context_management", "glucose_monitoring_alerts"],
         "status": "ready"
     }
 
@@ -533,24 +533,28 @@ def get_diabetes_management_summary() -> dict:
     return get_diabetes_summary()
 
 # ===== Glucose Alerts (Background Monitor) =====
-@mcp.tool(description="Start background glucose alerts. Checks every N minutes and alerts if outside [low, high] range.")
+@mcp.tool(description="Start background glucose monitoring with immediate suggestions")
 def start_glucose_alerts(
     low_threshold: float = 70,
     high_threshold: float = 250,
-    interval_minutes: int = 10,
-    webhook_url: str = None
+    interval_minutes: int = 10
 ) -> dict:
     """
-    Start the background glucose monitor.
-
-    If webhook_url is provided (or POKE_WEBHOOK_URL/ALERT_WEBHOOK_URL is set), an alert payload will be POSTed when
-    glucose is out of range; otherwise alerts are logged to alerts.log and printed.
+    Start the background glucose monitor that checks every N minutes and provides
+    AI-powered, context-aware suggestions when glucose goes outside safe ranges.
+    
+    Uses Gemini AI exclusively to generate personalized recommendations based on:
+    - Exact glucose value
+    - Time of day
+    - Severity of the alert
+    - Individual context
+    
+    No hardcoded medical advice - all suggestions are AI-generated.
     """
     return start_monitoring(
         low_threshold=low_threshold,
         high_threshold=high_threshold,
-        interval_minutes=interval_minutes,
-        webhook_url=webhook_url,
+        interval_minutes=interval_minutes
     )
 
 
@@ -563,7 +567,60 @@ def stop_glucose_alerts() -> dict:
 @mcp.tool(description="Get status of background glucose alerts")
 def glucose_alerts_status() -> dict:
     """Return the current status of the glucose alert monitor"""
-    return monitor_status()
+    return glucose_monitor_status()
+
+@mcp.tool(description="Get the latest glucose alert with AI-powered suggestions")
+def get_latest_glucose_alert() -> dict:
+    """
+    Get the most recent glucose alert with AI-generated, context-aware suggestions.
+    Uses Gemini AI exclusively to provide personalized recommendations based on the specific
+    glucose value, time, and situation. No hardcoded medical advice.
+    """
+    try:
+        status = glucose_monitor_status()
+        last_alert = status.get("last_alert")
+        
+        if not last_alert:
+            return {
+                "alert_available": False,
+                "message": "No recent glucose alerts",
+                "monitor_running": status.get("running", False)
+            }
+        
+        # Format alert for Poke with clear suggestions
+        alert_level = last_alert.get("level", "unknown")
+        value = last_alert.get("value", 0)
+        suggestion = last_alert.get("suggestion", "Monitor glucose closely")
+        timestamp = last_alert.get("timestamp", "Unknown time")
+        
+        if alert_level == "low":
+            message = f"🚨 LOW GLUCOSE ALERT: {value} mg/dL at {timestamp}"
+            action = f"URGENT: {suggestion}"
+        elif alert_level == "high":
+            message = f"🚨 HIGH GLUCOSE ALERT: {value} mg/dL at {timestamp}"
+            action = f"URGENT: {suggestion}"
+        else:
+            message = f"Glucose alert: {value} mg/dL at {timestamp}"
+            action = suggestion
+        
+        return {
+            "alert_available": True,
+            "alert_level": alert_level,
+            "glucose_value": value,
+            "timestamp": timestamp,
+            "message": message,
+            "immediate_action": action,
+            "suggestion": suggestion,
+            "ai_generated": last_alert.get("ai_generated", False),
+            "monitor_running": status.get("running", False)
+        }
+        
+    except Exception as e:
+        return {
+            "alert_available": False,
+            "error": "Failed to get latest alert",
+            "message": str(e)
+        }
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
