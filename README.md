@@ -72,7 +72,7 @@
    In your [Poke](https://poke.com) dashboard, add the Sweet MCP server:
 
    - Go to your Poke MCP integration settings
-   - Add your ngrok URL (e.g., `https://abc123.ngrok-free.app/mcp`) as the server endpoint
+   - Add your ngrok URL (e.g., `https://randommonkey.ngrok-free.app/mcp`) as the server endpoint
    - This allows Poke to communicate with your running Sweet server
 
 2. **Start using Sweet!**
