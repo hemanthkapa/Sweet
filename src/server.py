@@ -15,6 +15,7 @@ from diabetes_context import (
     learn_from_outcome,
     get_diabetes_summary
 )
+from glucose_monitor import start_monitoring, stop_monitoring, status as monitor_status
 
 # Load environment variables from .env file
 load_dotenv()
@@ -530,6 +531,39 @@ def learn_from_outcome_context(
 def get_diabetes_management_summary() -> dict:
     """Get a summary of diabetes management context for Poke"""
     return get_diabetes_summary()
+
+# ===== Glucose Alerts (Background Monitor) =====
+@mcp.tool(description="Start background glucose alerts. Checks every N minutes and alerts if outside [low, high] range.")
+def start_glucose_alerts(
+    low_threshold: float = 70,
+    high_threshold: float = 250,
+    interval_minutes: int = 10,
+    webhook_url: str = None
+) -> dict:
+    """
+    Start the background glucose monitor.
+
+    If webhook_url is provided (or POKE_WEBHOOK_URL/ALERT_WEBHOOK_URL is set), an alert payload will be POSTed when
+    glucose is out of range; otherwise alerts are logged to alerts.log and printed.
+    """
+    return start_monitoring(
+        low_threshold=low_threshold,
+        high_threshold=high_threshold,
+        interval_minutes=interval_minutes,
+        webhook_url=webhook_url,
+    )
+
+
+@mcp.tool(description="Stop background glucose alerts")
+def stop_glucose_alerts() -> dict:
+    """Stop the background glucose monitor"""
+    return stop_monitoring()
+
+
+@mcp.tool(description="Get status of background glucose alerts")
+def glucose_alerts_status() -> dict:
+    """Return the current status of the glucose alert monitor"""
+    return monitor_status()
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
