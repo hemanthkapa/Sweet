@@ -26,7 +26,7 @@
 
    ```bash
    git clone <repository-url>
-   cd ilovesugar
+   cd sweet
    ```
 
 2. **Set up Python environment**
