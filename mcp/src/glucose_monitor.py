@@ -49,7 +49,7 @@ def _get_ai_suggestion(glucose_value: float, alert_level: str, threshold: float)
         
         # Create context-aware prompt
         prompt = f"""
-        You are a diabetes management expert providing immediate, actionable advice for a glucose alert.
+        You are a diabetes management expert providing immediate, actionable advice for a glucose alert. You provide general advice too about being active, drinking enough water, maintiaing good sleep. 
         
         Current Situation:
         - Glucose Level: {glucose_value} mg/dL
