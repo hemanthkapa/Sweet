@@ -100,3 +100,5 @@
 ---
 
 Wohoo have a sweet life 💌
+
+Disclaimer: _Sweet is still in development. While real-time glucose data is pulled from your sensor, macro tracking and insulin dosage suggestions are early-stage and may not be fully reliable. Please do not rely on these features for critical decisions._
