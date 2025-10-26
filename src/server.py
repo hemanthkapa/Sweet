@@ -16,6 +16,13 @@ from diabetes_context import (
     get_diabetes_summary
 )
 from glucose_monitor import start_monitoring, stop_monitoring, status as glucose_monitor_status
+from notifications import (
+    list_recipients as list_alert_recipients_impl,
+    add_recipient as add_alert_recipient_impl,
+    remove_recipient as remove_alert_recipient_impl,
+    send_sms_to_all as send_sms_to_all_impl,
+    send_glucose_alert as send_glucose_alert_impl,
+)
 
 # Load environment variables from .env file
 load_dotenv()
@@ -621,6 +628,48 @@ def get_latest_glucose_alert() -> dict:
             "error": "Failed to get latest alert",
             "message": str(e)
         }
+
+# ===== Twilio Alerts & Recipients (MCP Tools) =====
+@mcp.tool(description="List all configured alert recipients from file and environment")
+def list_alert_recipients() -> dict:
+    """Returns merged list of recipients (file + ALERT_RECIPIENTS env)."""
+    return {"recipients": list_alert_recipients_impl()}
+
+
+@mcp.tool(description="Add an alert recipient (stored in recipients.json file)")
+def add_alert_recipient(name: str, phone: str) -> dict:
+    """Add recipient to file-backed list. Env-based recipients are read-only."""
+    result = add_alert_recipient_impl(name, phone)
+    return result
+
+
+@mcp.tool(description="Remove an alert recipient by phone (from recipients.json file)")
+def remove_alert_recipient(phone: str) -> dict:
+    """Remove recipient by phone from file-backed list."""
+    result = remove_alert_recipient_impl(phone)
+    return result
+
+
+@mcp.tool(description="Send a test SMS message to all recipients (uses Twilio or dry-run)")
+def send_test_sms(message: str = "Test from ilovesugar MCP server") -> dict:
+    """Send a simple test SMS to verify Twilio configuration."""
+    result = send_sms_to_all_impl(message)
+    return result
+
+
+@mcp.tool(description="Send a test glucose alert to all recipients (no Dexcom required)")
+def send_test_glucose_alert(level: str = "test", value: float = 123.0) -> dict:
+    """Format and send a glucose alert-like SMS to all recipients."""
+    payload = {
+        "level": level,
+        "value": value,
+        "threshold": 0,
+        "timestamp": datetime.now().isoformat(),
+        "suggestion": "This is a test alert. No action required.",
+        "ai_generated": False,
+    }
+    result = send_glucose_alert_impl(payload)
+    return result
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))

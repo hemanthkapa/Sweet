@@ -7,45 +7,29 @@ import requests
 import json
 import time
 import sys
+import pytest
 
 def test_server_health():
     """Test if the server is running and accessible"""
-    try:
-        # Test basic server response
-        response = requests.get("http://localhost:8000/", timeout=5)
-        print(f" Server is running (status: {response.status_code})")
-        return True
-    except requests.exceptions.ConnectionError:
-        print(" Server is not running. Start it with: python src/server.py")
-        return False
-    except Exception as e:
-        print(f" Server health check failed: {e}")
-        return False
+    # Test basic server response
+    response = requests.get("http://localhost:8000/", timeout=5)
+    print(f" Server is running (status: {response.status_code})")
+    # FastMCP may not serve '/' with 200; 404 is acceptable as long as server responds
+    assert response.status_code in (200, 404)
 
 def test_mcp_endpoint():
     """Test the MCP endpoint specifically"""
-    try:
-        response = requests.get("http://localhost:8000/mcp", timeout=5)
-        print(f" MCP endpoint accessible (status: {response.status_code})")
-        return True
-    except Exception as e:
-        print(f" MCP endpoint test failed: {e}")
-        return False
+    response = requests.get("http://localhost:8000/mcp", timeout=5)
+    print(f" MCP endpoint accessible (status: {response.status_code})")
+    # GET /mcp may return 406 (Not Acceptable) without proper headers; accept 200 or 406
+    assert response.status_code in (200, 406)
 
 def test_tools_via_http():
     """Test if we can call tools via HTTP (basic test)"""
-    try:
-        #checking if server responds
-        response = requests.get("http://localhost:8000/mcp", timeout=5)
-        if response.status_code == 200:
-            print("Server responds to MCP requests")
-            return True
-        else:
-            print(f"Server responded with status {response.status_code}")
-            return False
-    except Exception as e:
-        print(f"Tool testing failed: {e}")
-        return False
+    #checking if server responds
+    response = requests.get("http://localhost:8000/mcp", timeout=5)
+    print("Server responds to MCP requests")
+    assert response.status_code in (200, 406)
 
 def main():
     """Run all server tests"""
