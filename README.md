@@ -1,66 +1,102 @@
-# MCP Server Template
+# Sweet by Metabolic Company of CalHacks
 
-A minimal [FastMCP](https://github.com/jlowin/fastmcp) server template for Render deployment with streamable HTTP transport.
+**Manage diabetes from your textbox**
 
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/InteractionCo/mcp-server-template)
+## Features:
 
-## Local Development
+- **🔗 Dexcom Integration** - Real-time glucose monitoring with trend analysis and historical data
+- **🍎 AI Food Analysis** - Smart nutrition breakdown with personalized tips using Gemini AI
+- **💉 Insulin Calculator** - Precise dosing based on carbs and glucose with safety checks (keep in mind this is a fun hack, dont take it too seriosly: at least for now.)
+- **📊 Pattern Learning** - Track meals and glucose responses for personalized recommendations
+- **🚨 Smart Alerts** - Background monitoring with AI-generated suggestions for high/low glucose
+- **🤖 MCP Server** - Works seamlessly with Poke AI assistant through conversational text
+
+## 👻 Start:
+
+### Prerequisites
+
+- Dexcom Account (username and password)
+- Gemini API Key
+- Python 3.8+
+- Ngrok account (for exposing local server)
 
 ### Setup
 
-Fork the repo, then run:
+1. **Clone the repository**
 
-```bash
-git clone <your-repo-url>
-cd mcp-server-template
-conda create -n mcp-server python=3.13
-conda activate mcp-server
-pip install -r requirements.txt
-```
+   ```bash
+   git clone <repository-url>
+   cd ilovesugar
+   ```
 
-### Test
+2. **Set up Python environment**
 
-```bash
-python src/server.py
-# then in another terminal run:
-npx @modelcontextprotocol/inspector
-```
+   ```bash
+   cd mcp
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   pip install -r requirements.txt
+   ```
 
-Open http://localhost:3000 and connect to `http://localhost:8000/mcp` using "Streamable HTTP" transport (NOTE THE `/mcp`!).
+3. **Configure environment variables**
+   Create a `.env` file in the `mcp/` directory:
 
-## Deployment
+   ```env
+   DEXCOM_USERNAME=your_dexcom_userame
+   DEXCOM_PASSWORD=your_dexcom_password
+   DEXCOM_REGION=your_region  # Options: us, ous, jp (us=United States, ous=Outside US, jp=Japan)
+   GEMINI_API_KEY=your_gemini_api_key
+   # Server Configuration
+   PORT=8000
+   ENVIRONMENT=development
+   ```
 
-### Option 1: One-Click Deploy
-Click the "Deploy to Render" button above.
+4. **Start the MCP server**
 
-### Option 2: Manual Deployment
-1. Fork this repository
-2. Connect your GitHub account to Render
-3. Create a new Web Service on Render
-4. Connect your forked repository
-5. Render will automatically detect the `render.yaml` configuration
+   ```bash
+   cd mcp/src
+   python server.py
+   ```
 
-Your server will be available at `https://your-service-name.onrender.com/mcp` (NOTE THE `/mcp`!)
+5. **Expose server via Ngrok**
+   In a new terminal:
+   ```bash
+   ngrok http 8000
+   ```
+   Copy the HTTPS URL (e.g., `https://randommonkey.ngrok-free.app`)
 
-## Poke Setup
+### Connecting to Poke
 
-You can connect your MCP server to Poke at (poke.com/settings/connections)[poke.com/settings/connections].
-To test the connection explitly, ask poke somethink like `Tell the subagent to use the "{connection name}" integration's "{tool name}" tool`.
-If you run into persistent issues of poke not calling the right MCP (e.g. after you've renamed the connection) you may send `clearhistory` to poke to delete all message history and start fresh.
-We're working hard on improving the integration use of Poke :)
+1. **Configure Poke MCP Integration**
+
+   In your [Poke](https://poke.com) dashboard, add the Sweet MCP server:
+
+   - Go to your Poke MCP integration settings
+   - Add your ngrok URL (e.g., `https://abc123.ngrok-free.app/mcp`) as the server endpoint
+   - This allows Poke to communicate with your running Sweet server
+
+2. **Start using Sweet!**
+
+   Simply text Poke on your phone with messages like:
+
+   - "What is my current glucose level?"
+   - "I'm having this meal, could you please analyze the macros based on the description/image?"
+   - "How much insulin should i be taking for this meal?"
+   - "Analyze my glucose levels starting this morning, what meal has affected me the most?"
+   
+   Sweet can do much more, your imagination is the limit. 
+
+## Available tools
+
+### Main Functions:
+
+- **`get_current_glucose()`** - Get real-time glucose reading from Dexcom CGM
+- **`analyze_food(food_description)`** - AI-powered nutrition analysis with personalized tips
+- **`calculate_insulin_dose(carb_grams, ...)`** - Calculate insulin dose based on carbs and glucose
+- **`track_meal_context(food, carbs, insulin, glucose)`** - Log meals for pattern learning
+- **`start_glucose_alerts(thresholds)`** - Begin background glucose monitoring with AI alerts
+- **`get_diabetes_management_summary()`** - Get comprehensive diabetes management overview 
 
 
-## Customization
-
-Add more tools by decorating functions with `@mcp.tool`:
-
-```python
-@mcp.tool
-def calculate(x: float, y: float, operation: str) -> float:
-    """Perform basic arithmetic operations."""
-    if operation == "add":
-        return x + y
-    elif operation == "multiply":
-        return x * y
-    # ...
-```
+--- 
+Wohoo have a sweet life 💌
